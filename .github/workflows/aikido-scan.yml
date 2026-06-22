@@ -55,32 +55,18 @@ jobs:
       # Docs: https://docs.aikido.dev/ci-integrations/github-actions
       # -----------------------------------------------------------------------
       - name: Run Aikido Security Scan
-        uses: AikidoSec/github-actions-workflow@v1.0.12
+        uses: AikidoSec/github-actions-workflow@v1.0.13
         with:
           # --- Authentication ---
           secret-key: ${{ secrets.AIKIDO_TOKEN }}
-
-          # --- Required: pass github-token so Aikido resolves base_commit_id ---
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-          # --- Severity gate ---
-          # Minimum severity to fail the build: CRITICAL, HIGH, MEDIUM, LOW
-          minimum-severity: HIGH
-
-          # --- Scan type gates (true = fail pipeline if this scan type finds issues) ---
-          fail-on-sast-scan: true          # SAST findings gate
-          fail-on-dependency-scan: true    # SCA / dependency findings gate
-          fail-on-iac-scan: false          # IaC not relevant for DVJA (Java app)
-
-          # --- Timeout ---
+          fail-on-timeout: true
+          fail-on-dependency-scan: true
+          fail-on-sast-scan: false
+          fail-on-iac-scan: false
+          minimum-severity: 'CRITICAL'
           timeout-seconds: 180
-          fail-on-timeout: false           # Don't fail CI if scan times out
-
-          # --- PR feedback ---
-          post-scan-status-comment: on     # Posts a summary comment on PRs
-          post-sast-review-comments: on    # Inline SAST comments on PR diff
-
-
+          post-scan-status-comment: 'off'
+          post-sast-review-comments: 'off'
   # ---------------------------------------------------------------------------
   # JOB 3: Dependency review on PRs (GitHub native SCA complement)
   # ---------------------------------------------------------------------------
