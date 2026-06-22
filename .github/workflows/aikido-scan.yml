@@ -54,6 +54,12 @@ jobs:
       # Aikido CI Scanner — corrected inputs only
       # Docs: https://docs.aikido.dev/ci-integrations/github-actions
       # -----------------------------------------------------------------------
+      - name: Set Aikido commit context
+        run: |
+          echo "AIKIDO_COMMIT_ID=${{ github.sha }}" >> $GITHUB_ENV
+          echo "AIKIDO_BASE_COMMIT_ID=${{ github.event.before || github.sha }}" >> $GITHUB_ENV
+          echo "AIKIDO_REPO=${{ github.repository }}" >> $GITHUB_ENV
+          echo "AIKIDO_BRANCH=${{ github.ref_name }}" >> $GITHUB_ENV
       - name: Run Aikido Security Scan
         uses: AikidoSec/github-actions-workflow@v1.0.13
         with:
