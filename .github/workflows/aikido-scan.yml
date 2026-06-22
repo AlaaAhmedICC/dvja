@@ -54,26 +54,49 @@ jobs:
       # Aikido CI Scanner — corrected inputs only
       # Docs: https://docs.aikido.dev/ci-integrations/github-actions
       # -----------------------------------------------------------------------
-      - name: Set Aikido commit context
+      - name: Resolve Aikido commit context
+        id: commits
         run: |
-          echo "AIKIDO_COMMIT_ID=${{ github.sha }}" >> $GITHUB_ENV
-          echo "AIKIDO_BASE_COMMIT_ID=${{ github.event.before || github.sha }}" >> $GITHUB_ENV
-          echo "AIKIDO_REPO=${{ github.repository }}" >> $GITHUB_ENV
-          echo "AIKIDO_BRANCH=${{ github.ref_name }}" >> $GITHUB_ENV
+            CURRENT_SHA="${{ github.sha }}"
+   
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              # PR: base is the target branch HEAD before this PR
+              BASE_SHA="${{ github.event.pull_request.base.sha }}"
+            else
+              # Push / schedule / dispatch: use git parent
+              BASE_SHA=$(git rev-parse HEAD~1 2>/dev/null || git rev-list --max-parents=0 HEAD)
+            fi
+   
+            echo "AIKIDO_COMMIT_ID=${CURRENT_SHA}"    >> $GITHUB_ENV
+            echo "AIKIDO_BASE_COMMIT_ID=${BASE_SHA}"  >> $GITHUB_ENV
+            echo "AIKIDO_REPO=${{ github.repository }}" >> $GITHUB_ENV
+            echo "AIKIDO_BRANCH=${{ github.ref_name }}" >> $GITHUB_ENV
+   
+            echo "commit_id=${CURRENT_SHA}" >> $GITHUB_OUTPUT
+            echo "base_commit_id=${BASE_SHA}" >> $GITHUB_OUTPUT
+   
+      - name: Show resolved SHAs (debug)
+        run: |
+            echo "Current : $AIKIDO_COMMIT_ID"
+            echo "Base    : $AIKIDO_BASE_COMMIT_ID"
+            if [ "$AIKIDO_COMMIT_ID" = "$AIKIDO_BASE_COMMIT_ID" ]; then
+              echo "ERROR: commit and base are identical — scan will fail"
+              exit 1
+            fi
+   
       - name: Run Aikido Security Scan
         uses: AikidoSec/github-actions-workflow@v1.0.13
         with:
-          # --- Authentication ---
-          secret-key: ${{ secrets.AIKIDO_TOKEN }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          fail-on-timeout: true
-          fail-on-dependency-scan: true
-          fail-on-sast-scan: false
-          fail-on-iac-scan: false
-          minimum-severity: 'CRITICAL'
-          timeout-seconds: 180
-          post-scan-status-comment: 'off'
-          post-sast-review-comments: 'off'
+            secret-key: ${{ secrets.AIKIDO_TOKEN }}
+            github-token: ${{ secrets.GITHUB_TOKEN }}
+            minimum-severity: HIGH
+            fail-on-sast-scan: true
+            fail-on-dependency-scan: true
+            fail-on-iac-scan: false
+            timeout-seconds: 180
+            fail-on-timeout: false
+            post-scan-status-comment: on
+            post-sast-review-comments: on
   # ---------------------------------------------------------------------------
   # JOB 3: Dependency review on PRs (GitHub native SCA complement)
   # ---------------------------------------------------------------------------
