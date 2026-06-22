@@ -1,0 +1,132 @@
+# =============================================================================
+# Aikido Security — Full Scan Pipeline (SAST + SCA + Secrets)
+# Target: https://github.com/appsecco/dvja
+# Scans: SAST (code vulnerabilities), SCA (dependency vulns), Secrets detection
+# =============================================================================
+
+name: Aikido Security Scan
+
+on:
+  push:
+    branches: [ "main", "master", "develop" ]
+  pull_request:
+    branches: [ "main", "master" ]
+#  schedule:
+    # Run full scan nightly at 02:00 UTC
+#    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      fail_on_critical:
+        description: 'Fail pipeline on CRITICAL findings'
+        required: false
+        default: 'true'
+        type: boolean
+
+permissions:
+  contents: read
+  security-events: write   # Required for SARIF upload to GitHub Security tab
+  pull-requests: write      # Required for PR comments with findings
+
+env:
+  # Aikido CI token — store in GitHub Secrets as AIKIDO_TOKEN
+  AIKIDO_TOKEN: ${{ secrets.AIKIDO_TOKEN }}
+  # Minimum severity to fail the build: CRITICAL, HIGH, MEDIUM, LOW
+  MINIMUM_SEVERITY: "HIGH"
+  # Set to 'true' to block PRs on new findings
+  BLOCK_ON_NEW_FINDINGS: "true"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # JOB 1: Aikido SAST + SCA + Secrets (primary scan via Aikido CI)
+  # ---------------------------------------------------------------------------
+  aikido-scan:
+    name: "Aikido — SAST / SCA / Secrets"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Full history needed for accurate secrets scanning (git log)
+          fetch-depth: 0
+
+      - name: Set up Java (DVJA is a Maven project)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '11'
+          cache: 'maven'
+
+      - name: Build project (generates target/ for SCA accuracy)
+        run: |
+          mvn clean package -DskipTests -q 2>&1 || true
+          # Non-fatal — Aikido can scan without a full build
+
+      # -----------------------------------------------------------------------
+      # Aikido CI Scanner
+      # Docs: https://docs.aikido.dev/ci-integrations/github-actions
+      # -----------------------------------------------------------------------
+      - name: Run Aikido Security Scan
+        uses: AikidoSec/github-actions-workflow@v1.0.12
+        with:
+          secret-key: ${{ secrets.AIKIDO_TOKEN }}
+
+          # --- Scan scope ---
+          # Enable all three scan types
+          enable-sast: true          # Static code analysis (Java, JSP, XML)
+          enable-sca: true           # Dependency vulnerability scan (Maven/pom.xml)
+          enable-secrets: true       # Hardcoded secrets & credentials detection
+
+          # --- Gate configuration ---
+          # Fail CI if minimum severity threshold is breached
+          minimum-severity-to-fail: ${{ env.MINIMUM_SEVERITY }}
+
+          # Only fail on *new* issues introduced in this PR/commit
+          # Set to false for a full historical gate
+          fail-on-new-issues-only: ${{ env.BLOCK_ON_NEW_FINDINGS == 'true' }}
+
+          # --- Output ---
+          # Output SARIF report for GitHub Security tab
+          sarif-output-path: aikido-results.sarif
+
+      # -----------------------------------------------------------------------
+      # Upload SARIF to GitHub Security → Code Scanning tab
+      # -----------------------------------------------------------------------
+      - name: Upload SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()   # Upload even if scan found issues
+        with:
+          sarif_file: aikido-results.sarif
+          category: "aikido-security"
+
+      # -----------------------------------------------------------------------
+      # Archive raw results as build artifact
+      # -----------------------------------------------------------------------
+      - name: Archive scan results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: aikido-scan-results-${{ github.run_number }}
+          path: aikido-results.sarif
+          retention-days: 90
+
+
+  # ---------------------------------------------------------------------------
+  # JOB 3: Dependency review on PRs (GitHub native — SCA complement)
+  # ---------------------------------------------------------------------------
+  dependency-review:
+    name: "Dependency Review (PR only)"
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          deny-licenses: GPL-2.0, AGPL-3.0   # Adjust per your org policy
+          comment-summary-in-pr: always
