@@ -65,6 +65,7 @@ jobs:
         with:
           # --- Authentication ---
           secret-key: ${{ secrets.AIKIDO_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           fail-on-timeout: true
           fail-on-dependency-scan: true
           fail-on-sast-scan: false
